@@ -625,6 +625,19 @@ router.post('/security/code/:code/out', authMiddleware, requireRole('SECURITY'),
   if(!/^[0-9]{6}$/.test(code)) return res.status(400).json({ message:'Invalid code (6 digits)' });
   const now = slNowColombo();
 
+  // Ensure security_logs table exists (older DBs may not have it)
+  try{
+    await query(`CREATE TABLE IF NOT EXISTS security_logs(
+      id SERIAL PRIMARY KEY,
+      leave_id INTEGER,
+      leave_code VARCHAR(6),
+      action VARCHAR(10),
+      marked_by INTEGER,
+      marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }catch(e){ /* ignore */ }
+
+
   const upd = await query(
     `UPDATE leaves
      SET actual_out=$2
@@ -637,15 +650,20 @@ router.post('/security/code/:code/out', authMiddleware, requireRole('SECURITY'),
   if(!upd.rows[0]) return res.status(409).json({ message:'Cannot mark OUT (not found / not approved / already OUT)' });
 
   const id = upd.rows[0].id;
-  await query(
-    `INSERT INTO security_logs(leave_id, leave_code, action, marked_by) VALUES($1,$2,'OUT',$3)`,
-    [id, code, req.user.id]
-  );
+
+  try{
+    await query(
+      `INSERT INTO security_logs(leave_id, leave_code, action, marked_by) VALUES($1,$2,'OUT',$3)`,
+      [id, code, req.user.id]
+    );
+  }catch(e){ /* ignore */ }
 
   if(upd.rows[0]?.employee_id){
-    await notifyUsers([upd.rows[0].employee_id], { type:'SECURITY_OUT', text:`Security marked OUT for leave on ${upd.rows[0].date}.`, meta:{leave_id:id, leave_code:code} });
+    try{
+      await notifyUsers([upd.rows[0].employee_id], { type:'SECURITY_OUT', text:`Security marked OUT for leave on ${upd.rows[0].date}.`, meta:{leave_id:id, leave_code:code} });
+    }catch(e){ /* ignore */ }
   }
-  await logAudit(req,'SECURITY_OUT_CODE','leaves',id,{ leave_code: code });
+  try{ await logAudit(req,'SECURITY_OUT_CODE','leaves',id,{ leave_code: code }); }catch(e){ /* ignore */ }
 
   res.json({ ok:true, time: now.time, leave_id: id });
 }));
@@ -654,6 +672,19 @@ router.post('/security/code/:code/in', authMiddleware, requireRole('SECURITY'), 
   const code = String(req.params.code || '').trim();
   if(!/^[0-9]{6}$/.test(code)) return res.status(400).json({ message:'Invalid code (6 digits)' });
   const now = slNowColombo();
+
+  // Ensure security_logs table exists (older DBs may not have it)
+  try{
+    await query(`CREATE TABLE IF NOT EXISTS security_logs(
+      id SERIAL PRIMARY KEY,
+      leave_id INTEGER,
+      leave_code VARCHAR(6),
+      action VARCHAR(10),
+      marked_by INTEGER,
+      marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }catch(e){ /* ignore */ }
+
 
   const upd = await query(
     `UPDATE leaves
@@ -668,29 +699,49 @@ router.post('/security/code/:code/in', authMiddleware, requireRole('SECURITY'), 
   if(!upd.rows[0]) return res.status(409).json({ message:'Cannot mark IN (must be OUT first / already IN / not approved)' });
 
   const id = upd.rows[0].id;
-  await query(
-    `INSERT INTO security_logs(leave_id, leave_code, action, marked_by) VALUES($1,$2,'IN',$3)`,
-    [id, code, req.user.id]
-  );
+
+  try{
+    await query(
+      `INSERT INTO security_logs(leave_id, leave_code, action, marked_by) VALUES($1,$2,'IN',$3)`,
+      [id, code, req.user.id]
+    );
+  }catch(e){ /* ignore */ }
 
   if(upd.rows[0]?.employee_id){
-    await notifyUsers([upd.rows[0].employee_id], { type:'SECURITY_IN', text:`Security marked IN for leave on ${upd.rows[0].date}.`, meta:{leave_id:id, leave_code:code} });
+    try{
+      await notifyUsers([upd.rows[0].employee_id], { type:'SECURITY_IN', text:`Security marked IN for leave on ${upd.rows[0].date}.`, meta:{leave_id:id, leave_code:code} });
+    }catch(e){ /* ignore */ }
   }
-  await logAudit(req,'SECURITY_IN_CODE','leaves',id,{ leave_code: code });
+  try{ await logAudit(req,'SECURITY_IN_CODE','leaves',id,{ leave_code: code }); }catch(e){ /* ignore */ }
 
   res.json({ ok:true, time: now.time, leave_id: id });
 }));
 router.post('/security/:id/out', authMiddleware, requireRole('SECURITY'), asyncHandler(async (req,res)=>{
   const id = Number(req.params.id);
   const now = slNowColombo();
+
+  // Ensure security_logs table exists (older DBs may not have it)
+  try{
+    await query(`CREATE TABLE IF NOT EXISTS security_logs(
+      id SERIAL PRIMARY KEY,
+      leave_id INTEGER,
+      leave_code VARCHAR(6),
+      action VARCHAR(10),
+      marked_by INTEGER,
+      marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }catch(e){ /* ignore */ }
+
   await query(
     `UPDATE leaves SET actual_out=$2 WHERE id=$1 AND status='FINAL_APPROVED'`,
     [id, now.time]
   );
-  await query(`INSERT INTO security_logs(leave_id, leave_code, action, marked_by) SELECT id, leave_code, 'OUT', $2 FROM leaves WHERE id=$1`, [id, req.user.id]);
+  try{
+    await query(`INSERT INTO security_logs(leave_id, leave_code, action, marked_by) SELECT id, leave_code, 'OUT', $2 FROM leaves WHERE id=$1`, [id, req.user.id]);
+  }catch(e){ /* ignore */ }
   const info = await query(`SELECT employee_id,date FROM leaves WHERE id=$1`, [id]);
-  if(info.rows[0]?.employee_id){ await notifyUsers([info.rows[0].employee_id], { title:'Marked OUT', body:`Security marked you OUT for leave on ${info.rows[0].date}.`, meta:{leave_id:id} }); }
-  await logAudit(req,'SECURITY_OUT','leaves',id,null);
+  if(info.rows[0]?.employee_id){ try{ await notifyUsers([info.rows[0].employee_id], { title:'Marked OUT', body:`Security marked you OUT for leave on ${info.rows[0].date}.`, meta:{leave_id:id} }); }catch(e){ /* ignore */ } }
+  try{ await logAudit(req,'SECURITY_OUT','leaves',id,null); }catch(e){ /* ignore */ }
 
   res.json({ ok:true, time: now.time });
 }));
@@ -698,14 +749,29 @@ router.post('/security/:id/out', authMiddleware, requireRole('SECURITY'), asyncH
 router.post('/security/:id/in', authMiddleware, requireRole('SECURITY'), asyncHandler(async (req,res)=>{
   const id = Number(req.params.id);
   const now = slNowColombo();
+
+  // Ensure security_logs table exists (older DBs may not have it)
+  try{
+    await query(`CREATE TABLE IF NOT EXISTS security_logs(
+      id SERIAL PRIMARY KEY,
+      leave_id INTEGER,
+      leave_code VARCHAR(6),
+      action VARCHAR(10),
+      marked_by INTEGER,
+      marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }catch(e){ /* ignore */ }
+
   await query(
     `UPDATE leaves SET actual_in=$2 WHERE id=$1 AND status='FINAL_APPROVED'`,
     [id, now.time]
   );
-  await query(`INSERT INTO security_logs(leave_id, leave_code, action, marked_by) SELECT id, leave_code, 'IN', $2 FROM leaves WHERE id=$1`, [id, req.user.id]);
+  try{
+    await query(`INSERT INTO security_logs(leave_id, leave_code, action, marked_by) SELECT id, leave_code, 'IN', $2 FROM leaves WHERE id=$1`, [id, req.user.id]);
+  }catch(e){ /* ignore */ }
   const info = await query(`SELECT employee_id,date FROM leaves WHERE id=$1`, [id]);
-  if(info.rows[0]?.employee_id){ await notifyUsers([info.rows[0].employee_id], { title:'Marked IN', body:`Security marked you IN for leave on ${info.rows[0].date}.`, meta:{leave_id:id} }); }
-  await logAudit(req,'SECURITY_IN','leaves',id,null);
+  if(info.rows[0]?.employee_id){ try{ await notifyUsers([info.rows[0].employee_id], { title:'Marked IN', body:`Security marked you IN for leave on ${info.rows[0].date}.`, meta:{leave_id:id} }); }catch(e){ /* ignore */ } }
+  try{ await logAudit(req,'SECURITY_IN','leaves',id,null); }catch(e){ /* ignore */ }
 
   res.json({ ok:true, time: now.time });
 }));
@@ -713,6 +779,19 @@ router.post('/security/:id/in', authMiddleware, requireRole('SECURITY'), asyncHa
 // Manual auto-close endpoint (run from cron or sometimes manually)
 router.post('/admin/run-autoclose', authMiddleware, requireRole('ADMIN','HR'), async (req,res)=>{
   const now = slNowColombo();
+
+  // Ensure security_logs table exists (older DBs may not have it)
+  try{
+    await query(`CREATE TABLE IF NOT EXISTS security_logs(
+      id SERIAL PRIMARY KEY,
+      leave_id INTEGER,
+      leave_code VARCHAR(6),
+      action VARCHAR(10),
+      marked_by INTEGER,
+      marked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )`);
+  }catch(e){ /* ignore */ }
+
   // close any FINAL_APPROVED today with OUT but no IN after 21:30
   if (now.time < '21:30') {
     return res.json({ ok:true, message:'Before 21:30, nothing done' });
